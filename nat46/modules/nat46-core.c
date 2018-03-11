@@ -165,6 +165,8 @@ int try_parse_rule_arg(nat46_xlate_rule_t *rule, char *arg_name, char **ptail) {
       rule->style = NAT46_XLATE_RFC6052;
     } else if (0 == strcmp("NONE", val)) {
       rule->style = NAT46_XLATE_NONE;
+    } else if (0 == strcmp("MAC", val)) {
+      rule->style = NAT46_XLATE_MAC;
     } else {
       err = 1;
     }
@@ -227,6 +229,8 @@ char *xlate_style_to_string(nat46_xlate_style_t style) {
       return "MAP0";
     case NAT46_XLATE_RFC6052:
       return "RFC6052";
+    case NAT46_XLATE_MAC:
+      return "MAC";
   }
   return "unknown";
 }
@@ -333,6 +337,18 @@ void xlate_v4_to_nat64(nat46_instance_t *nat46, nat46_xlate_rule_t *rule, void *
   }
 }
 
+void xlate_v4_to_mac(nat46_instance_t *nat46, nat46_xlate_rule_t *rule, unsigned char *mac, void *pipv6) {
+  char *ipv6 = pipv6;
+
+  /* 'u' byte and suffix are zero */
+  memset(&ipv6[8], 0, 8);
+  if(rule->v6_pref_len == 80) {
+      memcpy(ipv6, &rule->v6_pref, 10);
+      memcpy(&ipv6[11], mac, 6);
+      break;
+  }
+}
+
 int xlate_nat64_to_v4(nat46_instance_t *nat46, nat46_xlate_rule_t *rule, void *pipv6, void *pipv4) {
   char *ipv4 = pipv4;
   char *ipv6 = pipv6;
@@ -390,6 +406,42 @@ int xlate_nat64_to_v4(nat46_instance_t *nat46, nat46_xlate_rule_t *rule, void *p
       memcpy(ipv4, &ipv6[12], 4);
       break;
   }
+  return 1;
+}
+
+int xlate_mac_to_v4(nat46_instance_t *nat46, nat46_xlate_rule_t *rule, void *pipv6, void *pipv4) {
+  char *ipv4 = pipv4;
+  char *ipv6 = pipv6;
+  int cmp = -1;
+  uint8_t v4_pref_len = rule->v4_pref_len;
+  int v6_pref_len = rule->v6_pref_len;
+
+  unsigned char mac[6];
+  unsigned int i, j, epoch, collision = 0;
+  uint32_t address;
+
+  if ((v4_pref_len % 8) != 0) {
+    /* bad ipv4 prefix */
+    return 0;
+  }
+
+  if (v6_pref_len == 80)
+    cmp = memcmp(ipv6, &rule->v6_pref, 10);
+
+  if (cmp) {
+    /* Not in NAT64 prefix */
+    return 0;
+  }
+
+  memcpy(mac, &ipv6[10], 6);
+
+  for (j = 0, i = 0; i < 6; i++)
+  	j = mac[i] + (j << 6) + (j << 16) - j;
+
+  address = htonl(ntohl(&rule->v4_pref) + ((j + epoch) % (1 + ntohl(ntohl(&rule->v4_pref) & (0xffffffff >> v4_pref_len)) - ntohl(&rule->v4_pref))) + collision);
+
+  memcpy(ipv4, &address, 4);
+
   return 1;
 }
 
@@ -654,7 +706,7 @@ int xlate_map_v6_to_v4(nat46_instance_t *nat46, nat46_xlate_rule_t *rule, void *
   return 1;
 }
 
-int xlate_v4_to_v6(nat46_instance_t *nat46, nat46_xlate_rule_t *rule, void *pipv4, void *pipv6, uint16_t *pl4id) {
+int xlate_v4_to_v6(nat46_instance_t *nat46, nat46_xlate_rule_t *rule, unsigned char *mac, void *pipv4, void *pipv6, uint16_t *pl4id) {
   int ret = 0;
   switch(rule->style) {
     case NAT46_XLATE_NONE: /* always fail unless it is a host 1:1 translation */
@@ -674,6 +726,9 @@ int xlate_v4_to_v6(nat46_instance_t *nat46, nat46_xlate_rule_t *rule, void *pipv
       xlate_v4_to_nat64(nat46, rule, pipv4, pipv6);
       /* NAT46 rules using RFC6052 always succeed since they can map any IPv4 address */
       ret = 1;
+      break;
+    case NAT46_XLATE_MAC:
+      ret = xlate_v4_to_mac(nat46, rule, mac, pipv6);
       break;
   }
   return ret;
@@ -697,6 +752,9 @@ int xlate_v6_to_v4(nat46_instance_t *nat46, nat46_xlate_rule_t *rule, void *pipv
       break;
     case NAT46_XLATE_RFC6052:
       ret = xlate_nat64_to_v4(nat46, rule, pipv6, pipv4);
+      break;
+    case NAT46_XLATE_MAC:
+      ret = xlate_mac_to_v4(nat46, rule, pipv6, pipv4);
       break;
   }
   return ret;
@@ -1684,7 +1742,7 @@ int ip4_input_not_interested(nat46_instance_t *nat46, struct iphdr *iph, struct 
   return 0;
 }
 
-int pairs_xlate_v4_to_v6_outer(nat46_instance_t *nat46, struct iphdr *hdr4, uint16_t *sport, uint16_t *dport, void *v6saddr, void *v6daddr) {
+int pairs_xlate_v4_to_v6_outer(nat46_instance_t *nat46, struct ethhdr *peth, struct iphdr *hdr4, uint16_t *sport, uint16_t *dport, void *v6saddr, void *v6daddr) {
   int ipair = 0;
   nat46_xlate_rulepair_t *apair = NULL;
   int xlate_src = -1;
@@ -1694,12 +1752,12 @@ int pairs_xlate_v4_to_v6_outer(nat46_instance_t *nat46, struct iphdr *hdr4, uint
     apair = &nat46->pairs[ipair];
 
     if(-1 == xlate_src) {
-      if(xlate_v4_to_v6(nat46, &apair->local, &hdr4->saddr, v6saddr, sport)) {
+      if(xlate_v4_to_v6(nat46, &apair->local, &peth->h_source, &hdr4->saddr, v6saddr, sport)) {
         xlate_src = ipair;
       }
     }
     if(-1 == xlate_dst) {
-      if(xlate_v4_to_v6(nat46, &apair->remote, &hdr4->daddr, v6daddr, dport)) {
+      if(xlate_v4_to_v6(nat46, &apair->remote, &peth->h_dest, &hdr4->daddr, v6daddr, dport)) {
         xlate_dst = ipair;
       }
     }
@@ -1737,6 +1795,8 @@ void nat46_ipv4_input(struct sk_buff *old_skb) {
 
   struct ipv6hdr * hdr6;
   struct iphdr * hdr4 = ip_hdr(old_skb);
+  struct ethhdr *peth = (struct ethhdr*)skb_mac_header(old_skb);
+
 
   char v6saddr[16], v6daddr[16];
 
@@ -1789,7 +1849,7 @@ void nat46_ipv4_input(struct sk_buff *old_skb) {
     having_l4 = 1;
   }
 
-  if(!pairs_xlate_v4_to_v6_outer(nat46, hdr4, having_l4 ? &sport : NULL, having_l4 ? &dport : NULL, v6saddr, v6daddr)) {
+  if(!pairs_xlate_v4_to_v6_outer(nat46, peth, hdr4, having_l4 ? &sport : NULL, having_l4 ? &dport : NULL, v6saddr, v6daddr)) {
     nat46debug(0, "[nat46] Could not translate v4->v6");
     goto done;
   }
