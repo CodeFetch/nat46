@@ -8,17 +8,17 @@
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
-PKG_NAME:=nat46
+PKG_NAME:=nat26
 PKG_VERSION:=0000000
 
 include $(INCLUDE_DIR)/package.mk
 
-define KernelPackage/nat46
+define KernelPackage/nat26
   DEPENDS:=+kmod-ipv6
-  TITLE:=Stateless NAT46 translation kernel module
+  TITLE:=Stateless NAT26 translation kernel module
   SECTION:=kernel
   SUBMENU:=Network Support
-  FILES:=$(PKG_BUILD_DIR)/modules/nat46.ko 
+  FILES:=$(PKG_BUILD_DIR)/modules/nat26.ko 
 endef
 
 
@@ -43,11 +43,11 @@ define Build/Compile
 	pwd
 endef
 
-define KernelPackage/nat46/install
+define KernelPackage/nat26/install
 	$(CP) -r ./files/* $(1)/
 endef
 
-$(eval $(call KernelPackage,nat46))
+$(eval $(call KernelPackage,nat26))
 
 
 

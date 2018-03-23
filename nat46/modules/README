@@ -1,31 +1,53 @@
 ABOUT AND USAGE
 ---------------
 
-This is a generic stateless NAT46 kernel module for Linux.
+This is a heavily modified fork of the stateless NAT46 kernel module for Linux.
+* CERNET MAP implementation
 
-It supports multiple simultaneous instances of NAT46 on the same host,
+  https://github.com/cernet/MAP
+
+Instead of using the source address of IPv4 packets for translation,
+this module uses the MAC address. For translating the destination address of
+IPv6 packets it uses either a fixed IPv4 address or a range 
+to which the MAC is being translated using the SDBM hashing algorithm.
+
+The development purpose of this module was to allow IPv4 (roaming) in IPv6-only 
+babel mesh networks using l3roamd.
+
+The implementation of the SDBM hashing algorithm is compatible to the one
+used by dnsmasq. Thus dnsmasq with the hashing option enabled can be used to
+assign addresses to clients which can then use the NAT26 module.
+
+This module creates two interfaces. One which should be used e.g. in a bridge
+to allow L2 flow and one PtP interface which should be used with static routing.
+
+It supports multiple simultaneous instances of NAT26 on the same host,
 allowing to implement sophisticated translation strategies just 
-by using routing to direct the packets to the appropriate interface.
+by using routing and bridging to direct the packets to the appropriate interface.
 
-Upon loading, it creates a file /proc/net/nat46/control, which is used 
+Upon loading, it creates a file /proc/net/nat26/control, which is used 
 to interact with it.
 
-echo add <ifname> | sudo tee /proc/net/nat46/control
-	create a new nat46 interface with a specified name
+echo add <ifname2> <ifname6> | sudo tee /proc/net/nat26/control
+	creates ifname2 for use with IPv4 bridging 
+	and ifname6 for use with IPv6 routing
 
-echo del <ifname> | sudo tee /proc/net/nat46/control
-	delete the existing nat46 interface with a specified name
+echo del <ifname2/ifname6> | sudo tee /proc/net/nat26/control
+	(enter either the name of ifname2 or ifname6)
+	delete the existing nat26 interface pair
 
-echo config <ifname> <cfg-strings> | sudo tee /proc/net/nat46/control
+echo config <ifname2/ifname6> <cfg-strings> | sudo tee /proc/net/nat26/control
+	(enter either the name of ifname2 or ifname6)
 	pass the <cfg-strings> data to configuration routine of
-	the respective nat46 interface. In case multiple rules are
+	the respective nat26 interface. In case multiple rules are
 	present - this command controls the very last one in the ruleset.
 
-echo insert <ifname> <cfg-strings> | sudo tee /proc/net/nat46/control
+echo insert <ifname2/ifname6> <cfg-strings> | sudo tee /proc/net/nat26/control
+	(enter either the name of ifname2 or ifname6)
 	insert a new rule with the specified config string at the head
 	of the rule set for the device.
 
-CONFIGURING NAT46 DEVICE
+CONFIGURING NAT26 DEVICE
 -----------------------
 
 Configuration parameters for the device take form of "name value" pairs,
@@ -83,29 +105,6 @@ this rule:
 	<rule>.fmr-flag
 		ignored in this translation style
 
-<rule>.style MAP
-	this is a translation rule for the MAP (Mapping Address and Port) algorithm,
-	which may include the layer 4 identifier (tcp/udp port or ICMP id).
-
-	<rule>.v6 <v6pref>/<v6prefixlen>
-		this parameter defines the MAP domain IPv6 prefix
-
-	<rule>.v4 <v6pref>/<v6prefixlen>
-		this parameter defines the MAP domain IPv4 prefix
-
-	<rule>.ea-len
-		this parameter defines the length of the embedded address bits
-		within the IPv6 prefix that has been allocated.
-
-	<rule>.psid-offset
-		this parameter specifies how many bits to the right to shift
-		the bits of the psid within the port value.
-
-	<rule>.fmr-flag
-		this parameter allows the "local" rule to be tried as a "remote" rule 
-		as well. In MAP terminology, this allows to implement FMR rule by just
-		setting this flag. This flag is used only on the "local" side, and is
-		ignored for the "remote" side.
 
 
 CODE STRUCTURE
@@ -113,43 +112,27 @@ CODE STRUCTURE
 
 There are several groups of files:
 
-nat46-module.*
+nat26-module.*
 	These files deal with the overall Linux module handling: loading / unloading,
 	creating and destroying the /proc control file, as well as parsing the commands
 	to pass on to the netdev portion of the code.
 
-nat46-netdev.*
+nat26-netdev.*
 	Network device management code. This module accepts the high-level commands and
 	performs the device-level work: locating the devices in the chain, grouping
 	the functions into the device structures, etc. This module adds the pointers 
 	the processing functions which are defined in the core group.
 
-nat46-core.*
+nat26-core.*
 	Core processing routines. These do not do any netdevice/module work, they use 
 	primarily sk_buff and nat64_instance_t data structures in order to operate.
 	They use the Linux kernel and glue functions.
 
-nat46-glue.*
+nat26-glue.*
 	These are the "adaptation" functions, over time it is expected there will
 	be almost nothing. The reason for the "glue" code to exist is to share
 	the core code with userland implementations.
 
 
-ACKNOWLEDGEMENTS
-----------------
-
-This code has been inspired or uses some parts of the following:
-
-* CERNET MAP implementation
-
-  https://github.com/cernet/MAP
-
-* Stateful NAT64 kernel module implementation by Julius Kriukas
-
-  https://github.com/fln/nat64
-
-* Stateless NAT46 kernel module implementation by Tomasz Mrugalski
-
-  https://github.com/tomaszmrugalski/ip46nat
 
 

@@ -3,6 +3,7 @@
  * module-wide functions, mostly boilerplate
  *
  * Copyright (c) 2013-2014 Andrew Yourtchenko <ayourtch@gmail.com>
+ * Copyright (c) 2018 Vincent Wiemann <vincent.wiemann@ironai.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2
@@ -43,16 +44,16 @@
 #include "nat46-core.h"
 #include "nat46-netdev.h"
 
-#define NAT46_PROC_NAME	"nat46"
-#define NAT46_CONTROL_PROC_NAME "control"
+#define nat46_PROC_NAME	"nat46"
+#define nat46_CONTROL_PROC_NAME "control"
 
-#ifndef NAT46_VERSION
-#define NAT46_VERSION __DATE__ " " __TIME__
+#ifndef nat46_VERSION
+#define nat46_VERSION "1"
 #endif
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Andrew Yourtchenko <ayourtch@gmail.com>");
-MODULE_DESCRIPTION("NAT46 stateless translation");
+MODULE_AUTHOR("Vincent Wiemann <vincent.wiemann@ironai.com>");
+MODULE_DESCRIPTION("nat46 stateless translation");
 
 int debug = 0;
 module_param(debug, int, 0);
@@ -91,8 +92,13 @@ static ssize_t nat46_proc_write(struct file *file, const char __user *buffer,
 {
 	char *buf = NULL;
 	char *tail = NULL;
-	char *devname = NULL;
+	char *devname2 = NULL;
+	char *devname6 = NULL;
 	char *arg_name = NULL;
+	struct net_device *dev2;
+	struct net_device *dev6;
+	nat46_instance_t *nat462;
+	nat46_instance_t *nat466;
 
 	buf = kmalloc(sizeof(char) * (count + 1), GFP_KERNEL);
 	if (!buf)
@@ -110,21 +116,31 @@ static ssize_t nat46_proc_write(struct file *file, const char __user *buffer,
 
 	while (NULL != (arg_name = get_next_arg(&tail))) {
 		if (0 == strcmp(arg_name, "add")) {
-			devname = get_devname(&tail);
-			printk(KERN_INFO "nat46: adding device (%s)\n", devname);
-			nat46_create(devname);
+			devname2 = get_devname(&tail);
+			devname6 = get_devname(&tail);
+			printk(KERN_INFO "nat46: adding L2 device (%s) and L3 device (%s)\n", devname2, devname6);
+			nat46_create(devname2);
+			nat46_create(devname6);
+			dev2 = nat46_find_dev(devname2);
+			dev6 = nat46_find_dev(devname6);
+			nat462 = netdev_nat46_instance(dev2);
+			nat466 = netdev_nat46_instance(dev6);
+			nat462->dev2 = dev2;
+			nat462->dev6 = dev6;
+			nat46_netdev_set_priv(dev6, nat462);
+			release_nat46_instance(nat466);
 		} else if (0 == strcmp(arg_name, "del")) {
-			devname = get_devname(&tail);
-			printk(KERN_INFO "nat46: deleting device (%s)\n", devname);
-			nat46_destroy(devname);
+			devname2 = get_devname(&tail);
+			printk(KERN_INFO "nat46: deleting device (%s)\n", devname2);
+			nat46_destroy(devname2);
 		} else if (0 == strcmp(arg_name, "config")) {
-			devname = get_devname(&tail);
-			printk(KERN_INFO "nat46: configure device (%s) with '%s'\n", devname, tail);
-			nat46_configure(devname, tail);
+			devname2 = get_devname(&tail);
+			printk(KERN_INFO "nat46: configure device (%s) with '%s'\n", devname2, tail);
+			nat46_configure(devname2, tail);
 		} else if (0 == strcmp(arg_name, "insert")) {
-			devname = get_devname(&tail);
-			printk(KERN_INFO "nat46: insert new rule into device (%s) with '%s'\n", devname, tail);
-			nat46_insert(devname, tail);
+			devname2 = get_devname(&tail);
+			printk(KERN_INFO "nat46: insert new rule into device (%s) with '%s'\n", devname2, tail);
+			nat46_insert(devname2, tail);
 		}
 	}
 
@@ -143,9 +159,9 @@ static const struct file_operations nat46_proc_fops = {
 
 
 int create_nat46_proc_entry(void) {
-	nat46_proc_parent = proc_mkdir(NAT46_PROC_NAME, init_net.proc_net);
+	nat46_proc_parent = proc_mkdir(nat46_PROC_NAME, init_net.proc_net);
 	if (nat46_proc_parent) {
-		nat46_proc_entry = proc_create(NAT46_CONTROL_PROC_NAME, 0644, nat46_proc_parent, &nat46_proc_fops );
+		nat46_proc_entry = proc_create(nat46_CONTROL_PROC_NAME, 0644, nat46_proc_parent, &nat46_proc_fops );
 		if(!nat46_proc_entry) {
 			printk(KERN_INFO "Error creating proc entry");
 			return -ENOMEM;
@@ -159,7 +175,7 @@ static int __init nat46_init(void)
 {
 	int ret = 0;
 
-	printk("nat46: module (version %s) loaded.\n", NAT46_VERSION);
+	printk("nat46: module (version %s) loaded.\n", nat46_VERSION);
 	ret = create_nat46_proc_entry();
 	if(ret) {
 		goto error;
@@ -175,9 +191,9 @@ static void __exit nat46_exit(void)
 	nat46_destroy_all();
 	if (nat46_proc_parent) {
 		if (nat46_proc_entry) {
-			remove_proc_entry(NAT46_CONTROL_PROC_NAME, nat46_proc_parent);
+			remove_proc_entry(nat46_CONTROL_PROC_NAME, nat46_proc_parent);
 		}
-		remove_proc_entry(NAT46_PROC_NAME, init_net.proc_net);
+		remove_proc_entry(nat46_PROC_NAME, init_net.proc_net);
 	}
 	printk("nat46: module unloaded.\n");
 }

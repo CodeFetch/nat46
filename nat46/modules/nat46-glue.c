@@ -2,6 +2,7 @@
  * glue functions, candidates to go to -core
  *
  * Copyright (c) 2013-2014 Andrew Yourtchenko <ayourtch@gmail.com>
+ * Copyright (c) 2018 Vincent Wiemann <vincent.wiemann@ironai.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2
@@ -19,7 +20,7 @@
 #include "nat46-core.h"
 
 int is_valid_nat46(nat46_instance_t *nat46) {
-  return (nat46 && (nat46->sig == NAT46_SIGNATURE));
+  return (nat46 && (nat46->sig == nat46_SIGNATURE));
 }
 
 nat46_instance_t *alloc_nat46_instance(int npairs, nat46_instance_t *old, int from_ipair, int to_ipair) {
@@ -30,7 +31,7 @@ nat46_instance_t *alloc_nat46_instance(int npairs, nat46_instance_t *old, int fr
   } else {
     printk("[nat46] make_nat46_instance: allocated nat46 instance with %d pairs\n", npairs);
   }
-  nat46->sig = NAT46_SIGNATURE;
+  nat46->sig = nat46_SIGNATURE;
   nat46->npairs = npairs;
   nat46->refcount = 1; /* The caller gets the reference */
   if (old) {
@@ -50,7 +51,7 @@ nat46_instance_t *get_nat46_instance(struct sk_buff *sk) {
     nat46->refcount++;
     return nat46;
   } else {
-    printk("[nat46] get_nat46_instance: Could not find a valid NAT46 instance!");
+    printk("[nat46] get_nat46_instance: Could not find a valid nat46 instance!");
     return NULL;
   }
 }
@@ -59,7 +60,7 @@ void release_nat46_instance(nat46_instance_t *nat46) {
   nat46->refcount--;
   if(0 == nat46->refcount) {
     printk("[nat46] release_nat46_instance: freeing nat46 instance with %d pairs\n", nat46->npairs);
-    nat46->sig = FREED_NAT46_SIGNATURE;
+    nat46->sig = FREED_nat46_SIGNATURE;
     kfree(nat46);
   }
 }

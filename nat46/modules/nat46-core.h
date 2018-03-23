@@ -1,7 +1,8 @@
 /*
- * NAT46 core definitions
+ * nat46 core definitions
  *
  * Copyright (c) 2013-2014 Andrew Yourtchenko <ayourtch@gmail.com>
+ * Copyright (c) 2018 Vincent Wiemann <vincent.wiemann@ironai.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2
@@ -14,8 +15,8 @@
  *
  */
 
-#ifndef __NAT46_CORE_H__
-#define __NAT46_CORE_H__
+#ifndef __nat46_CORE_H__
+#define __nat46_CORE_H__
 
 #include "nat46-glue.h"
 
@@ -33,14 +34,13 @@
  */
 
 typedef enum {
-  NAT46_XLATE_NONE = 0,
-  NAT46_XLATE_MAP,
-  NAT46_XLATE_MAP0,
-  NAT46_XLATE_RFC6052
+  nat46_XLATE_NONE = 0,
+  nat46_XLATE_RFC6052,
+  nat46_XLATE_MAC6
 } nat46_xlate_style_t;
 
-#define NAT46_SIGNATURE 0x544e3634
-#define FREED_NAT46_SIGNATURE 0xdead544e
+#define nat46_SIGNATURE 0x544e3634
+#define FREED_nat46_SIGNATURE 0xdead544e
 
 typedef struct {
   nat46_xlate_style_t style;
@@ -62,7 +62,8 @@ typedef struct {
   u32 sig; /* nat46 signature */
   int refcount;
   int debug;
-
+  struct net_device *dev2;
+  struct net_device *dev6;
   int npairs;
   nat46_xlate_rulepair_t pairs[0]; /* npairs */
 } nat46_instance_t;
